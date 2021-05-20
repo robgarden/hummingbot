@@ -13,6 +13,8 @@ def find_rate(prices: Dict[str, Decimal], pair: str) -> Decimal:
     :param prices: The dictionary of trading pairs and their prices
     :param pair: The trading pair
     '''
+    if pair == "ZAR-USD":
+        return Decimal(0.073)
     if pair in prices:
         return prices[pair]
     base, quote = pair.split("-")
