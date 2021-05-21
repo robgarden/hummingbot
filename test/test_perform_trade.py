@@ -39,14 +39,19 @@ class PerformTradeUnitTest(unittest.TestCase):
     end: pd.Timestamp = pd.Timestamp("2019-01-01 01:00:00", tz="UTC")
     start_timestamp: float = start.timestamp()
     end_timestamp: float = end.timestamp()
-    maker_trading_pairs: List[str] = ["COINALPHA-WETH", "COINALPHA", "WETH"]
+    trading_pair: str = "COINALPHA-WETH"
+    base_asset, quote_asset = trading_pair.split("-")
     clock_tick_size = 10
 
     def setUp(self):
 
         self.clock: Clock = Clock(ClockMode.BACKTEST, self.clock_tick_size, self.start_timestamp, self.end_timestamp)
         self.market: BacktestMarket = BacktestMarket()
-        self.maker_data: MockOrderBookLoader = MockOrderBookLoader(*self.maker_trading_pairs)
+        self.maker_data: MockOrderBookLoader = MockOrderBookLoader(
+            trading_pair=self.trading_pair,
+            base_currency=self.base_asset,
+            quote_currency=self.quote_asset,
+        )
         self.mid_price = 100
         self.time_delay = 15
         self.cancel_order_wait_time = 45
@@ -58,53 +63,33 @@ class PerformTradeUnitTest(unittest.TestCase):
         self.market.set_balance("QETH", 500)
         self.market.set_quantization_param(
             QuantizationParams(
-                self.maker_trading_pairs[0], 6, 6, 6, 6
+                self.trading_pair, 6, 6, 6, 6
             )
         )
 
         self.market_info: MarketTradingPairTuple = MarketTradingPairTuple(
-            *(
-                [self.market] + self.maker_trading_pairs
-            )
+            self.market, self.trading_pair, self.base_asset, self.quote_asset
         )
-
-        logging_options: int = (PerformTradeStrategy.OPTION_LOG_ALL &
-                                (~PerformTradeStrategy.OPTION_LOG_NULL_ORDER_SIZE))
 
         # Define strategies to test
-        self.limit_buy_strategy: PerformTradeStrategy = PerformTradeStrategy(
-            [self.market_info],
-            order_type="limit",
-            order_price=99,
+        self.buy_mid_price_strategy: PerformTradeStrategy = PerformTradeStrategy(
+            exchange=self.market,
+            trading_pair=self.trading_pair,
             is_buy=True,
-            order_amount=1.0,
-            logging_options=logging_options
+            spread=Decimal("3.0"),
+            order_amount=Decimal("1.0"),
+            price_type="mid_price"
         )
-        self.limit_sell_strategy: PerformTradeStrategy = PerformTradeStrategy(
-            [self.market_info],
-            order_type="limit",
-            order_price=101,
+        self.sell_mid_price_strategy: PerformTradeStrategy = PerformTradeStrategy(
+            exchange=self.market,
+            trading_pair=self.trading_pair,
             is_buy=False,
-            order_amount=1.0,
-            logging_options=logging_options
+            spread=Decimal("3.0"),
+            order_amount=Decimal("1.0"),
+            price_type="mid_price"
         )
-        self.market_buy_strategy: PerformTradeStrategy = PerformTradeStrategy(
-            [self.market_info],
-            order_type="market",
-            order_price=None,
-            is_buy=True,
-            order_amount=1.0,
-            logging_options=logging_options
-        )
-        self.market_sell_strategy: PerformTradeStrategy = PerformTradeStrategy(
-            [self.market_info],
-            order_type="market",
-            order_price=None,
-            is_buy=False,
-            order_amount=1.0,
-            logging_options=logging_options
-        )
-        self.logging_options = logging_options
+        # TODO: Add tests for PerformTrade strategy that use different price types
+
         self.clock.add_iterator(self.market)
         self.maker_order_fill_logger: EventLogger = EventLogger()
         self.cancel_order_logger: EventLogger = EventLogger()
@@ -174,111 +159,83 @@ class PerformTradeUnitTest(unittest.TestCase):
             ))
 
     def test_limit_buy_order(self):
-        self.clock.add_iterator(self.limit_buy_strategy)
-
-        # test whether number of orders is one after time delay
-        # check whether the order is buy
-        # check whether the price is correct
-        # check whether amount is correct
+        self.clock.add_iterator(self.buy_mid_price_strategy)
         self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
-        self.assertEqual(1, len(self.limit_buy_strategy.active_bids))
-        bid_order: LimitOrder = self.limit_buy_strategy.active_bids[0][1]
-        self.assertEqual(Decimal("99"), bid_order.price)
+
+        mid_price: Decimal = self.market.get_mid_price(self.trading_pair)
+        expected_order_price: Decimal = mid_price * (Decimal('1') - (Decimal("3") / Decimal("100")))
+
+        bid_orders: List[LimitOrder] = [o for o in self.buy_mid_price_strategy.active_orders if o.is_buy]
+        self.assertEqual(1, len(bid_orders))
+        bid_order: LimitOrder = bid_orders[0]
+        self.assertEqual(expected_order_price, bid_order.price)
         self.assertEqual(1, bid_order.quantity)
 
     def test_limit_sell_order(self):
-        self.clock.add_iterator(self.limit_sell_strategy)
-
-        # test whether number of orders is one
-        # check whether the order is sell
-        # check whether the price is correct
-        # check whether amount is correct
+        self.clock.add_iterator(self.sell_mid_price_strategy)
         self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
-        self.assertEqual(1, len(self.limit_sell_strategy.active_asks))
-        ask_order: LimitOrder = self.limit_sell_strategy.active_asks[0][1]
-        self.assertEqual(Decimal("101"), ask_order.price)
+
+        mid_price: Decimal = self.market.get_mid_price(self.trading_pair)
+        expected_order_price: Decimal = mid_price * (Decimal('1') + (Decimal("3") / Decimal("100")))
+
+        ask_orders: List[LimitOrder] = [o for o in self.sell_mid_price_strategy.active_orders if not o.is_buy]
+        self.assertEqual(1, len(ask_orders))
+        ask_order: LimitOrder = ask_orders[0]
+        self.assertEqual(expected_order_price, ask_order.price)
         self.assertEqual(1, ask_order.quantity)
 
-    def test_market_buy_order(self):
-        self.clock.add_iterator(self.market_buy_strategy)
+    # def test_order_filled_events(self):
+    #     self.clock.add_iterator(self.limit_buy_strategy)
+    #     self.clock.add_iterator(self.limit_sell_strategy)
 
-        # test whether number of orders is one
-        # check whether the order is buy
-        # check whether the size is correct
-        self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
-        market_buy_events: List[BuyOrderCompletedEvent] = [t for t in self.buy_order_completed_logger.event_log
-                                                           if isinstance(t, BuyOrderCompletedEvent)]
-        self.assertEqual(1, len(market_buy_events))
-        amount: Decimal = sum(t.base_asset_amount for t in market_buy_events)
-        self.assertEqual(1, amount)
-        self.buy_order_completed_logger.clear()
+    #     # test whether number of orders is one
+    #     # check whether the order is sell
+    #     # check whether the price is correct
+    #     # check whether amount is correct
+    #     self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
+    #     self.assertEqual(1, len(self.limit_sell_strategy.active_asks))
+    #     ask_order: LimitOrder = self.limit_sell_strategy.active_asks[0][1]
+    #     self.assertEqual(Decimal("101"), ask_order.price)
+    #     self.assertEqual(1, ask_order.quantity)
 
-    def test_market_sell_order(self):
-        self.clock.add_iterator(self.market_sell_strategy)
+    #     self.assertEqual(1, len(self.limit_buy_strategy.active_bids))
+    #     bid_order: LimitOrder = self.limit_buy_strategy.active_bids[0][1]
+    #     self.assertEqual(Decimal("99"), bid_order.price)
+    #     self.assertEqual(1, bid_order.quantity)
 
-        # test whether number of orders is one
-        # check whether the order is sell
-        # check whether the size is correct
-        self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
-        market_sell_events: List[SellOrderCompletedEvent] = [t for t in self.sell_order_completed_logger.event_log
-                                                             if isinstance(t, SellOrderCompletedEvent)]
-        self.assertEqual(1, len(market_sell_events))
-        amount: Decimal = sum(t.base_asset_amount for t in market_sell_events)
-        self.assertEqual(1, amount)
-        self.sell_order_completed_logger.clear()
+    #     # Simulate market fill for limit buy and limit sell
+    #     self.simulate_limit_order_fill(self.market, bid_order)
+    #     self.simulate_limit_order_fill(self.market, ask_order)
 
-    def test_order_filled_events(self):
-        self.clock.add_iterator(self.limit_buy_strategy)
-        self.clock.add_iterator(self.limit_sell_strategy)
+    #     fill_events = self.maker_order_fill_logger.event_log
+    #     self.assertEqual(2, len(fill_events))
+    #     bid_fills: List[OrderFilledEvent] = [evt for evt in fill_events if evt.trade_type is TradeType.SELL]
+    #     ask_fills: List[OrderFilledEvent] = [evt for evt in fill_events if evt.trade_type is TradeType.BUY]
+    #     self.assertEqual(1, len(bid_fills))
+    #     self.assertEqual(1, len(ask_fills))
 
-        # test whether number of orders is one
-        # check whether the order is sell
-        # check whether the price is correct
-        # check whether amount is correct
-        self.clock.backtest_til(self.start_timestamp + self.clock_tick_size + self.time_delay)
-        self.assertEqual(1, len(self.limit_sell_strategy.active_asks))
-        ask_order: LimitOrder = self.limit_sell_strategy.active_asks[0][1]
-        self.assertEqual(Decimal("101"), ask_order.price)
-        self.assertEqual(1, ask_order.quantity)
+    # def test_with_insufficient_balance(self):
+    #     # Set base balance to zero and check if sell strategies don't place orders
+    #     self.clock.add_iterator(self.limit_buy_strategy)
+    #     self.clock.add_iterator(self.market_buy_strategy)
+    #     self.market.set_balance("WETH", 0)
+    #     end_ts = self.start_timestamp + self.clock_tick_size + self.time_delay
+    #     self.clock.backtest_til(end_ts)
+    #     self.assertEqual(0, len(self.limit_buy_strategy.active_bids))
+    #     market_buy_events: List[BuyOrderCompletedEvent] = [t for t in self.buy_order_completed_logger.event_log
+    #                                                        if isinstance(t, BuyOrderCompletedEvent)]
+    #     self.assertEqual(0, len(market_buy_events))
+    #     self.assertEqual(False, self.limit_buy_strategy.place_orders)
+    #     self.assertEqual(False, self.market_buy_strategy.place_orders)
 
-        self.assertEqual(1, len(self.limit_buy_strategy.active_bids))
-        bid_order: LimitOrder = self.limit_buy_strategy.active_bids[0][1]
-        self.assertEqual(Decimal("99"), bid_order.price)
-        self.assertEqual(1, bid_order.quantity)
-
-        # Simulate market fill for limit buy and limit sell
-        self.simulate_limit_order_fill(self.market, bid_order)
-        self.simulate_limit_order_fill(self.market, ask_order)
-
-        fill_events = self.maker_order_fill_logger.event_log
-        self.assertEqual(2, len(fill_events))
-        bid_fills: List[OrderFilledEvent] = [evt for evt in fill_events if evt.trade_type is TradeType.SELL]
-        ask_fills: List[OrderFilledEvent] = [evt for evt in fill_events if evt.trade_type is TradeType.BUY]
-        self.assertEqual(1, len(bid_fills))
-        self.assertEqual(1, len(ask_fills))
-
-    def test_with_insufficient_balance(self):
-        # Set base balance to zero and check if sell strategies don't place orders
-        self.clock.add_iterator(self.limit_buy_strategy)
-        self.clock.add_iterator(self.market_buy_strategy)
-        self.market.set_balance("WETH", 0)
-        end_ts = self.start_timestamp + self.clock_tick_size + self.time_delay
-        self.clock.backtest_til(end_ts)
-        self.assertEqual(0, len(self.limit_buy_strategy.active_bids))
-        market_buy_events: List[BuyOrderCompletedEvent] = [t for t in self.buy_order_completed_logger.event_log
-                                                           if isinstance(t, BuyOrderCompletedEvent)]
-        self.assertEqual(0, len(market_buy_events))
-        self.assertEqual(False, self.limit_buy_strategy.place_orders)
-        self.assertEqual(False, self.market_buy_strategy.place_orders)
-
-        self.clock.add_iterator(self.limit_sell_strategy)
-        self.clock.add_iterator(self.market_sell_strategy)
-        self.market.set_balance("COINALPHA", 0)
-        end_ts += self.clock_tick_size + self.time_delay
-        self.clock.backtest_til(end_ts)
-        self.assertEqual(0, len(self.limit_sell_strategy.active_asks))
-        market_sell_events: List[SellOrderCompletedEvent] = [t for t in self.sell_order_completed_logger.event_log
-                                                             if isinstance(t, SellOrderCompletedEvent)]
-        self.assertEqual(0, len(market_sell_events))
-        self.assertEqual(False, self.limit_sell_strategy.place_orders)
-        self.assertEqual(False, self.market_sell_strategy.place_orders)
+    #     self.clock.add_iterator(self.limit_sell_strategy)
+    #     self.clock.add_iterator(self.market_sell_strategy)
+    #     self.market.set_balance("COINALPHA", 0)
+    #     end_ts += self.clock_tick_size + self.time_delay
+    #     self.clock.backtest_til(end_ts)
+    #     self.assertEqual(0, len(self.limit_sell_strategy.active_asks))
+    #     market_sell_events: List[SellOrderCompletedEvent] = [t for t in self.sell_order_completed_logger.event_log
+    #                                                          if isinstance(t, SellOrderCompletedEvent)]
+    #     self.assertEqual(0, len(market_sell_events))
+    #     self.assertEqual(False, self.limit_sell_strategy.place_orders)
+    #     self.assertEqual(False, self.market_sell_strategy.place_orders)

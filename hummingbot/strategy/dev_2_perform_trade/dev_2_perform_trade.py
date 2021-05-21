@@ -43,7 +43,7 @@ class PerformTradeStrategy(StrategyPyBase):
         super().__init__()
         self._exchange = exchange
         self._trading_pair = trading_pair
-        self._is_buy = is_buy,
+        self._is_buy = is_buy
         self._spread = spread / Decimal("100")
         self._order_amount = order_amount
 
