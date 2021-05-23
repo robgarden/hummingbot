@@ -8,6 +8,7 @@ from typing import (
 )
 from decimal import Decimal
 import asyncio
+from async_timeout import timeout
 import json
 import aiohttp
 import math
@@ -40,7 +41,6 @@ from hummingbot.core.data_type.common import OpenOrder
 from .valr_auth import ValrAuth
 from .valr_order_book_tracker import ValrOrderBookTracker
 from .valr_user_stream_tracker import ValrUserStreamTracker
-from .valr_auth import ValrAuth
 from .valr_in_flight_order import ValrInFlightOrder
 from . import valr_utils
 from . import valr_constants as Constants
@@ -98,7 +98,7 @@ class ValrExchange(ExchangeBase):
 
     @property
     def name(self) -> str:
-        return "valr"
+        return Constants.EXCHANGE_NAME
 
     @property
     def order_books(self) -> Dict[str, OrderBook]:
@@ -131,7 +131,7 @@ class ValrExchange(ExchangeBase):
         :return True when all statuses pass, this might take 5-10 seconds for all the connector's components and
         services to be ready.
         """
-        self.logger().info(self.status_dict)
+        # self.logger().info(self.status_dict)
         return all(self.status_dict.values())
 
     @property
@@ -206,9 +206,9 @@ class ValrExchange(ExchangeBase):
         if self._trading_rules_polling_task is not None:
             self._trading_rules_polling_task.cancel()
             self._trading_rules_polling_task = None
-        if self._status_polling_task is not None:
-            self._status_polling_task.cancel()
-            self._status_polling_task = None
+        # if self._status_polling_task is not None:
+        #     self._status_polling_task.cancel()
+        #     self._status_polling_task = None
         if self._user_stream_tracker_task is not None:
             self._user_stream_tracker_task.cancel()
             self._user_stream_tracker_task = None
@@ -224,8 +224,7 @@ class ValrExchange(ExchangeBase):
         try:
             # https://api.valr.com/v1/public/status
             response = await self._api_request("get", "/v1/public/status")
-            data = await response.json()
-            if data["status"] != "online":
+            if response["status"] != "online":
                 return NetworkStatus.NOT_CONNECTED
         except asyncio.CancelledError:
             raise
@@ -254,7 +253,7 @@ class ValrExchange(ExchangeBase):
             except Exception as e:
                 self.logger().network(f"Unexpected error while fetching trading rules. Error: {str(e)}",
                                       exc_info=True,
-                                      app_warning_msg="Could not fetch new trading rules from Crypto.com. "
+                                      app_warning_msg="Could not fetch new trading rules from VALR "
                                                       "Check network connection.")
                 await asyncio.sleep(0.5)
 
@@ -293,7 +292,21 @@ class ValrExchange(ExchangeBase):
                 trading_pair = valr_utils.convert_from_exchange_trading_pair(rule["symbol"])
                 min_order_size = Decimal(rule["minBaseAmount"])
                 max_order_size = Decimal(rule["maxBaseAmount"])
-                result[trading_pair] = TradingRule(trading_pair, min_order_size=min_order_size, max_order_size=max_order_size)
+
+                price_increment = Decimal(str(rule["tickSize"]))
+                # quantity_decimals = Decimal(str(rule["baseDecimalPlaces"]))
+
+                # E.g. a price decimal of 2 means 0.01 incremental.
+                # quantity_step = Decimal("1") / Decimal(str(math.pow(10, quantity_decimals)))
+                quantity_step = Decimal(rule["minBaseAmount"])
+
+                result[trading_pair] = TradingRule(
+                    trading_pair,
+                    min_order_size=min_order_size,
+                    max_order_size=max_order_size,
+                    min_price_increment=price_increment,
+                    min_base_amount_increment=quantity_step
+                )
             except Exception:
                 self.logger().error(f"Error parsing the trading pair rule {rule}. Skipping.", exc_info=True)
         return result
@@ -315,20 +328,11 @@ class ValrExchange(ExchangeBase):
         client = await self._http_client()
         if is_auth_required:
             # request_id = valr_utils.RequestId.generate_request_id()
-            data = params or ""
             timestamp = valr_utils.get_ms_timestamp()
-            signature = self._valr_auth.generate_signature(path_url, method, timestamp, data)
-            # params = self._valr_auth.generate_auth_dict(path_url, timestamp, data)
+            signature = self._valr_auth.generate_signature(path_url, method, timestamp, params)
             headers = self._valr_auth.get_headers(signature, timestamp)
-            # logging.log(logging.INFO, path_url)
-            # logging.log(logging.INFO, method)
-            # logging.log(logging.INFO, headers)
         else:
             headers = {"Content-Type": "application/json"}
-
-        # logging.log(logging.INFO, path_url)
-        # logging.log(logging.INFO, method)
-        # logging.log(logging.INFO, headers)
 
         if method == "get":
             response = await client.get(url, headers=headers)
@@ -343,10 +347,16 @@ class ValrExchange(ExchangeBase):
 
         try:
             response_text = await response.text()
-            parsed_response = json.loads(response_text)
+            if response_text:
+                parsed_response = json.loads(response_text)
+            else:
+                parsed_response = {}
         except Exception as e:
-            raise IOError(f"Error parsing data from {url}. Error: {str(e)}")
-        if response.status != 200:
+            raise IOError("Error parsing data from %s. Error: %s" % (url, str(e)))
+
+        if response.status == 404:
+            raise IOError("Not Found")
+        if response.status not in [200, 202]:
             raise IOError(f"Error fetching data from {url}. HTTP status is {response.status}. "
                           f"Message: {parsed_response}")
         # if parsed_response["code"] != 0:
@@ -439,15 +449,26 @@ class ValrExchange(ExchangeBase):
         if amount < trading_rule.min_order_size:
             raise ValueError(f"Buy order amount {amount} is lower than the minimum order size "
                              f"{trading_rule.min_order_size}.")
-        api_params = {"instrument_name": valr_utils.convert_to_exchange_trading_pair(trading_pair),
-                      "side": trade_type.name,
-                      "type": "LIMIT",
-                      "price": f"{price:f}",
-                      "quantity": f"{amount:f}",
-                      "client_oid": order_id
-                      }
-        if order_type is OrderType.LIMIT_MAKER:
-            api_params["exec_inst"] = "POST_ONLY"
+
+        # example request
+        # {
+        #     "side": "SELL",
+        #     "quantity": "0.100000",
+        #     "price": "10000",
+        #     "pair": "BTCZAR",
+        #     "postOnly": true,
+        #     "customerOrderId": "1234"
+        #     "timeInForce": "GTC"
+        # }
+        api_params = {
+            "side": trade_type.name,
+            "quantity": f"{amount:f}",
+            "price": f"{price:f}",
+            "pair": valr_utils.convert_to_exchange_trading_pair(trading_pair),
+            "postOnly": order_type is OrderType.LIMIT_MAKER,
+            "customerOrderId": order_id
+        }
+
         self.start_tracking_order(order_id,
                                   None,
                                   trading_pair,
@@ -457,8 +478,8 @@ class ValrExchange(ExchangeBase):
                                   order_type
                                   )
         try:
-            order_result = await self._api_request("post", "private/create-order", api_params, True)
-            exchange_order_id = str(order_result["result"]["order_id"])
+            order_result = await self._api_request("post", "/v1/orders/limit", api_params, True)
+            exchange_order_id = str(order_result["id"])
             tracked_order = self._in_flight_orders.get(order_id)
             if tracked_order is not None:
                 self.logger().info(f"Created {order_type.name} {trade_type.name} order {order_id} for "
@@ -481,7 +502,7 @@ class ValrExchange(ExchangeBase):
         except Exception as e:
             self.stop_tracking_order(order_id)
             self.logger().network(
-                f"Error submitting {trade_type.name} {order_type.name} order to Crypto.com for "
+                f"Error submitting {trade_type.name} {order_type.name} order to VALR for "
                 f"{amount} {trading_pair} "
                 f"{price}.",
                 exc_info=True,
@@ -537,13 +558,15 @@ class ValrExchange(ExchangeBase):
             await self._api_request(
                 "delete",
                 "/v1/orders/order",
-                { "orderId": order_id, "pair": valr_utils.convert_to_exchange_trading_pair(trading_pair) },
-                True
+                {"orderId": ex_order_id, "pair": valr_utils.convert_to_exchange_trading_pair(trading_pair)},
+                is_auth_required=True
             )
             return order_id
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            if str(e) == "Not Found":
+                pass
             self.logger().network(
                 f"Failed to cancel order {order_id}: {str(e)}",
                 exc_info=True,
@@ -571,7 +594,7 @@ class ValrExchange(ExchangeBase):
                 self.logger().error(str(e), exc_info=True)
                 self.logger().network("Unexpected error while fetching account updates.",
                                       exc_info=True,
-                                      app_warning_msg="Could not fetch account updates from Crypto.com. "
+                                      app_warning_msg="Could not fetch account updates from VALR. "
                                                       "Check API key and network connection.")
                 await asyncio.sleep(0.5)
 
@@ -618,11 +641,11 @@ class ValrExchange(ExchangeBase):
             tracked_orders = list(self._in_flight_orders.values())
             tasks = []
             for tracked_order in tracked_orders:
-                order_id = await tracked_order.get_exchange_order_id()
+                exchange_order_id = await tracked_order.get_exchange_order_id()
 
                 # https://api.valr.com/v1/orders/:currencyPair/orderid/:orderId
-                path = "/v1/orders/%s/orderid/%s" % (tracked_order.trading_pair, order_id)
-                tasks.append(self._api_request("get", path, True))
+                path = "/v1/orders/%s/orderid/%s" % (tracked_order.trading_pair, exchange_order_id)
+                tasks.append(self._api_request("get", path, is_auth_required=True))
 
             self.logger().debug(f"Polling for order status updates of {len(tasks)} orders.")
             responses = await safe_gather(*tasks, return_exceptions=True)
@@ -645,11 +668,7 @@ class ValrExchange(ExchangeBase):
             for response in responses:
                 if isinstance(response, Exception):
                     raise response
-                result = response["result"]
-                if "trade_list" in result:
-                    for trade_msg in result["trade_list"]:
-                        await self._process_trade_message(trade_msg)
-                self._process_order_message(result["order_info"])
+                self._process_order_message(response)
 
     # TODO process order message
     def _process_order_message(self, order_msg: Dict[str, Any]):
@@ -657,12 +676,16 @@ class ValrExchange(ExchangeBase):
         Updates in-flight order and triggers cancellation or failure event if needed.
         :param order_msg: The order response from either REST or web socket API (they are of the same format)
         """
-        client_order_id = order_msg["client_oid"]
+        client_order_id = order_msg["customerOrderId"]
         if client_order_id not in self._in_flight_orders:
             return
         tracked_order = self._in_flight_orders[client_order_id]
         # Update order execution status
-        tracked_order.last_state = order_msg["status"]
+        if "status" in order_msg:
+            tracked_order.last_state = order_msg["status"].upper()
+        elif "orderStatusType" in order_msg:
+            tracked_order.last_state = order_msg["orderStatusType"].upper()
+
         if tracked_order.is_cancelled:
             self.logger().info(f"Successfully cancelled order {client_order_id}.")
             self.trigger_event(MarketEvent.OrderCancelled,
@@ -673,7 +696,7 @@ class ValrExchange(ExchangeBase):
             self.stop_tracking_order(client_order_id)
         elif tracked_order.is_failure:
             self.logger().info(f"The market order {client_order_id} has failed according to order status API. "
-                               f"Reason: {valr_utils.get_api_reason(order_msg['reason'])}")
+                               f"Reason: {order_msg['failedReason']}")
             self.trigger_event(MarketEvent.OrderFailure,
                                MarketOrderFailureEvent(
                                    self.current_timestamp,
@@ -741,32 +764,28 @@ class ValrExchange(ExchangeBase):
         :param timeout_seconds: The timeout at which the operation will be canceled.
         :returns List of CancellationResult which indicates whether each order is successfully cancelled.
         """
-        if self._trading_pairs is None:
-            raise Exception("cancel_all can only be used when trading_pairs are specified.")
         cancellation_results = []
+        incomplete_orders = [o for o in self._in_flight_orders.values() if not o.is_done]
+        open_orders = await self.get_open_orders()
+        for incomplete_order in incomplete_orders:
+            if incomplete_order.client_order_id in [o.client_order_id for o in open_orders]:
+                await self._execute_cancel(incomplete_order.trading_pair, incomplete_order.client_order_id)
+
         try:
-            # for trading_pair in self._trading_pairs:
-            #     await self._api_request(
-            #         "post",
-            #         "private/cancel-all-orders",
-            #         {"instrument_name": valr_utils.convert_to_exchange_trading_pair(trading_pair)},
-            #         True
-            #     )
-            # for orders in self.
-            open_orders = await self.get_open_orders()
-            for cl_order_id, tracked_order in self._in_flight_orders.items():
-                open_order = [o for o in open_orders if o.client_order_id == cl_order_id]
-                if not open_order:
-                    cancellation_results.append(CancellationResult(cl_order_id, True))
-                    self.trigger_event(MarketEvent.OrderCancelled,
-                                       OrderCancelledEvent(self.current_timestamp, cl_order_id))
-                else:
-                    cancellation_results.append(CancellationResult(cl_order_id, False))
+            async with timeout(timeout_seconds):
+                open_orders = await self.get_open_orders()
+                for cl_order_id, tracked_order in self._in_flight_orders.items():
+                    open_order = [o for o in open_orders if o.client_order_id == cl_order_id]
+                    if not open_order:
+                        cancellation_results.append(CancellationResult(cl_order_id, True))
+                        self.trigger_event(MarketEvent.OrderCancelled, OrderCancelledEvent(self.current_timestamp, cl_order_id))
+                    else:
+                        cancellation_results.append(CancellationResult(cl_order_id, False))
         except Exception:
             self.logger().network(
                 "Failed to cancel all orders.",
                 exc_info=True,
-                app_warning_msg="Failed to cancel all orders on Crypto.com. Check API key and network connection."
+                app_warning_msg="Failed to cancel all orders on VALR. Check API key and network connection."
             )
         return cancellation_results
 
@@ -822,22 +841,26 @@ class ValrExchange(ExchangeBase):
         ValrAPIUserStreamDataSource.
         """
         async for event_message in self._iter_user_event_queue():
+            # self.logger().info("EVENT MESSAGE")
+            # self.logger().info(event_message)
             try:
-                if "result" not in event_message or "channel" not in event_message["result"]:
+                if "type" not in event_message or "data" not in event_message:
                     continue
-                channel = event_message["result"]["channel"]
-                if "user.trade" in channel:
-                    for trade_msg in event_message["result"]["data"]:
-                        await self._process_trade_message(trade_msg)
-                elif "user.order" in channel:
-                    for order_msg in event_message["result"]["data"]:
-                        self._process_order_message(order_msg)
-                elif channel == "user.balance":
-                    balances = event_message["result"]["data"]
-                    for balance_entry in balances:
-                        asset_name = balance_entry["currency"]
-                        self._account_balances[asset_name] = Decimal(str(balance_entry["balance"]))
-                        self._account_available_balances[asset_name] = Decimal(str(balance_entry["available"]))
+
+                event_type = event_message["type"]
+
+                # if "user.trade" in channel:
+                #     for trade_msg in event_message["result"]["data"]:
+                #         await self._process_trade_message(trade_msg)
+                # elif "user.order" in channel:
+                #     for order_msg in event_message["result"]["data"]:
+                #         self._process_order_message(order_msg)
+                # elif channel == "user.balance":
+                if "BALANCE_UPDATE" in event_type:
+                    balance_entry = event_message["data"]
+                    asset_name = balance_entry["currency"]["shortName"]
+                    self._account_balances[asset_name] = Decimal(balance_entry["total"])
+                    self._account_available_balances[asset_name] = Decimal(balance_entry["available"])
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -863,7 +886,7 @@ class ValrExchange(ExchangeBase):
         #         "timeInForce": "GTC"
         #     }, ...
         # ]
-        orders = await self._api_request("get", "/v1/orders/open", True)
+        orders = await self._api_request("get", "/v1/orders/open", is_auth_required=True)
         ret_val = []
         for order in orders:
             if valr_utils.HBOT_BROKER_ID not in order["customerOrderId"]:
@@ -881,7 +904,7 @@ class ValrExchange(ExchangeBase):
                     order_type=OrderType.LIMIT,
                     is_buy=True if order["side"].lower() == "buy" else False,
                     time=valr_utils.iso8601_to_s(order["createdAt"]),
-                    exchange_order_id=order["order_id"]
+                    exchange_order_id=order["orderId"]
                 )
             )
         return ret_val

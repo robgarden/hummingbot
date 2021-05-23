@@ -21,7 +21,7 @@ class ValrInFlightOrder(InFlightOrderBase):
                  trade_type: TradeType,
                  price: Decimal,
                  amount: Decimal,
-                 initial_state: str = "OPEN"):
+                 initial_state: str = "PLACED"):
         super().__init__(
             client_order_id,
             exchange_order_id,
@@ -37,11 +37,11 @@ class ValrInFlightOrder(InFlightOrderBase):
 
     @property
     def is_done(self) -> bool:
-        return self.last_state in {"FILLED", "CANCELED", "REJECTED", "EXPIRED"}
+        return self.last_state in ["FILLED", "CANCELED", "REJECTED", "EXPIRED", "FAILED"]
 
     @property
     def is_failure(self) -> bool:
-        return self.last_state in {"REJECTED"}
+        return self.last_state in ["REJECTED", "FAILED"]
 
     @property
     def is_cancelled(self) -> bool:

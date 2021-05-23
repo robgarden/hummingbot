@@ -111,13 +111,12 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
             #     ],
             #     "LastChange": "2020-05-13T09:11:15.826178Z"
             # }
-            url = "%s/v1/public/%s/orderbook" % (
-                    constants.REST_URL,
-                    valr_utils.convert_to_exchange_trading_pair(trading_pair)
-                )
+            url = "%s/v1/public/%s/orderbook" % (constants.REST_URL, valr_utils.convert_to_exchange_trading_pair(trading_pair))
             orderbook_response = await client.get(url)
 
             if orderbook_response.status != 200:
+                logging.log(logging.INFO, "cannot get order book data")
+                logging.log(logging.INFO, await orderbook_response.text())
                 raise IOError(
                     f"Error fetching OrderBook for {trading_pair} at {constants.EXCHANGE_NAME}. "
                     f"HTTP status is {orderbook_response.status}."
@@ -187,7 +186,6 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
                     # }
                     if response.get("type") != "NEW_TRADE":
                         continue
-
 
                     trade: Dict[Any] = response["data"]
                     trade_timestamp: int = iso8601_to_s(trade["tradedAt"])

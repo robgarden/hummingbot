@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 import asyncio
-import copy
+# import copy
 import logging
 import websockets
 import ujson
 from enum import Enum
 from hummingbot.core.utils.async_utils import safe_ensure_future
-
 
 from typing import Optional, AsyncIterable, Any, List, Dict
 from websockets.exceptions import ConnectionClosed
@@ -16,13 +15,7 @@ from . import valr_constants as constants
 from .valr_auth import ValrAuth
 from .valr_utils import RequestId, get_ms_timestamp
 
-# reusable websocket class
-# ToDo: We should eventually remove this class, and instantiate web socket connection normally (see Binance for example)
 
-ValrWebSocketConnectionType = {
-    ""
-
-}
 class ValrWebSocketConnectionType(Enum):
     ACCOUNT = 1
     TRADE = 2
@@ -95,8 +88,8 @@ class ValrWebsocket(RequestId):
 
     # emit messages
     async def _emit(self, data: Optional[Any] = {}):
-        logging.log(logging.INFO, "Web socket emit")
-        logging.log(logging.INFO, data)
+        # logging.log(logging.INFO, "Web socket emit")
+        # logging.log(logging.INFO, data)
         return await self._client.send(ujson.dumps(data))
 
     # request via websocket

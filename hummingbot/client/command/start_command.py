@@ -42,6 +42,7 @@ class StartCommand:
                               func: Callable, *args, **kwargs):
         while True:
             all_ready = all([market.ready for market in self.markets.values()])
+            # self.logger().info("ALL READY? %s" % all_ready)
             if not all_ready:
                 await asyncio.sleep(0.5)
             else:
@@ -151,6 +152,7 @@ class StartCommand:
             self.logger().info("start command initiated.")
 
             if self._trading_required:
+                self.logger().info("trading required")
                 self.kill_switch = KillSwitch(self)
                 await self.wait_till_ready(self.kill_switch.start)
         except Exception as e:

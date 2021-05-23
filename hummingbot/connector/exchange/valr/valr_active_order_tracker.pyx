@@ -46,7 +46,7 @@ cdef class ValrActiveOrderTracker:
 
     def get_rates_and_quantities(self, entry) -> tuple:
         # price, quantity
-        return float(entry[0]), float(entry[1])
+        return float(entry["price"]), float(entry["quantity"])
 
     cdef tuple c_convert_diff_message_to_np_arrays(self, object message):
         cdef:
@@ -61,8 +61,8 @@ cdef class ValrActiveOrderTracker:
             double timestamp = message.timestamp
             double amount = 0
 
-        bid_entries = content["Bids"]
-        ask_entries = content["Asks"]
+        bid_entries = content["data"]["Bids"]
+        ask_entries = content["data"]["Asks"]
 
         bids = s_empty_diff
         asks = s_empty_diff
@@ -104,7 +104,7 @@ cdef class ValrActiveOrderTracker:
         timestamp = message.timestamp
         content = message.content
 
-        for snapshot_orders, active_orders in [(content["Bids"], self._active_bids), (content["Asks"], self.active_asks)]:
+        for snapshot_orders, active_orders in [(content["data"]["Bids"], self._active_bids), (content["data"]["Asks"], self.active_asks)]:
             for order in snapshot_orders:
                 price, amount = self.get_rates_and_quantities(order)
 
