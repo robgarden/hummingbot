@@ -57,7 +57,8 @@ class ValrOrderBookTracker(OrderBookTracker):
         past_diffs_window: Deque[ValrOrderBookMessage] = deque()
         self._past_diffs_windows[trading_pair] = past_diffs_window
 
-        message_queue: asyncio.Queue = self._tracking_message_queues[trading_pair]
+        # message_queue: asyncio.Queue = self._tracking_message_queues[trading_pair]
+        message_queue: asyncio.Queue = self._order_book_diff_stream
         order_book: ValrOrderBook = self._order_books[trading_pair]
         active_order_tracker: ValrActiveOrderTracker = self._active_order_trackers[trading_pair]
 
@@ -74,6 +75,8 @@ class ValrOrderBookTracker(OrderBookTracker):
                 else:
                     message = await message_queue.get()
 
+                # self.logger().info("Got order book message")
+                # self.logger().info(message)
                 if message.type is OrderBookMessageType.DIFF:
                     bids, asks = active_order_tracker.convert_diff_message_to_order_book_row(message)
                     order_book.apply_diffs(bids, asks, message.update_id)

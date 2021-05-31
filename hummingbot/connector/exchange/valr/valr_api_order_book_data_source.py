@@ -208,14 +208,16 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
         """
         Listen for orderbook diffs using websocket book channel
         """
+        ws = ValrWebsocket(self._valr_auth, ValrWebSocketConnectionType.TRADE)
+        await ws.connect()
+
+        order_book_update_subscription = {
+            "event": "AGGREGATED_ORDERBOOK_UPDATE",
+            "pairs": [valr_utils.convert_to_exchange_trading_pair(pair) for pair in self._trading_pairs]
+        }
+        await ws.subscribe([(order_book_update_subscription)])
         while True:
             try:
-                ws = ValrWebsocket(self._valr_auth, ValrWebSocketConnectionType.TRADE)
-                await ws.connect()
-                await ws.subscribe(list({
-                    "event": "AGGREGATED_ORDERBOOK_UPDATE",
-                    "pairs": [valr_utils.convert_to_exchange_trading_pair(pair) for pair in self._trading_pairs]
-                }))
 
                 # {
                 #     "type": "AGGREGATED_ORDERBOOK_UPDATE",
@@ -240,14 +242,17 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
                         continue
 
                     timestamp: int = iso8601_to_s(response["data"]["LastChange"])
+                    # self.logger().info("GOT ORDER BOOK UPDATE FROM WS")
                     # data in this channel is not order book diff but the entire order book (up to depth 20).
                     # so we need to convert it into a order book snapshot.
                     # VARL does not offer order book diff ws updates.
                     orderbook_msg: OrderBookMessage = ValrOrderBook.snapshot_message_from_exchange(
                         response,
                         timestamp,
-                        metadata={"trading_pair": valr_utils.convert_from_exchange_trading_pair(response["data"]["currencyPairSymbol"])}
+                        metadata={"trading_pair": valr_utils.convert_from_exchange_trading_pair(response["currencyPairSymbol"])}
                     )
+                    # self.logger().info(response["data"]["Asks"][0]["price"])
+                    # self.logger().info(response["data"]["Asks"][0]["quantity"])
                     output.put_nowait(orderbook_msg)
 
             except asyncio.CancelledError:
@@ -259,7 +264,7 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
                     app_warning_msg="Unexpected error with WebSocket connection. Retrying in 30 seconds. "
                                     "Check network connection."
                 )
-                self.logger().log(20, e)
+                self.logger().error(e)
                 await asyncio.sleep(30.0)
             finally:
                 await ws.disconnect()
