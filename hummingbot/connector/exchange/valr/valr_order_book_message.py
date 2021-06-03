@@ -46,25 +46,18 @@ class ValrOrderBookMessage(OrderBookMessage):
 
     @property
     def trading_pair(self) -> str:
-        if "currencyPairSymbol" in self.content:
-            return self.content["currencyPairSymbol"]
-        # elif "instrument_name" in self.content:
-        #     return self.content["instrument_name"]
+        return self.content["trading_pair"]
 
     @property
     def asks(self) -> List[OrderBookRow]:
-        asks = map(self.content["data"]["Asks"], lambda ask: {"price": float(ask["price"]), "amount": float(ask["quantity"])})
-
         return [
-            OrderBookRow(float(price), float(amount), self.update_id) for price, amount in asks
+            OrderBookRow(float(ask["price"]), float(ask["quantity"]), self.update_id) for ask in self.content["data"]["Asks"]
         ]
 
     @property
     def bids(self) -> List[OrderBookRow]:
-        bids = map(self.content["data"]["Bids"], lambda bid: {"price": float(bid["price"]), "amount": float(bid["quantity"])})
-
         return [
-            OrderBookRow(float(price), float(amount), self.update_id) for price, amount in bids
+            OrderBookRow(float(bid["price"]), float(bid["quantity"]), self.update_id) for bid in self.content["data"]["Bids"]
         ]
 
     def __eq__(self, other) -> bool:
