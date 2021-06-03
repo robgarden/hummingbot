@@ -11,7 +11,6 @@ from hummingbot.logger import HummingbotLogger
 from hummingbot.core.data_type.order_book_tracker import OrderBookTracker
 
 from . import valr_constants as constants
-from .valr_auth import ValrAuth
 from .valr_order_book_message import ValrOrderBookMessage
 from .valr_active_order_tracker import ValrActiveOrderTracker
 from .valr_api_order_book_data_source import ValrAPIOrderBookDataSource
@@ -27,8 +26,8 @@ class ValrOrderBookTracker(OrderBookTracker):
             cls._logger = logging.getLogger(__name__)
         return cls._logger
 
-    def __init__(self, valr_auth: ValrAuth, trading_pairs: Optional[List[str]] = None,):
-        super().__init__(ValrAPIOrderBookDataSource(valr_auth, trading_pairs), trading_pairs)
+    def __init__(self, trading_pairs: Optional[List[str]] = None,):
+        super().__init__(ValrAPIOrderBookDataSource(trading_pairs), trading_pairs)
 
         self._ev_loop: asyncio.BaseEventLoop = asyncio.get_event_loop()
         self._order_book_snapshot_stream: asyncio.Queue = asyncio.Queue()

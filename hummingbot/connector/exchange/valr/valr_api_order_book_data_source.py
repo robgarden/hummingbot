@@ -14,7 +14,6 @@ from hummingbot.logger import HummingbotLogger
 
 from . import valr_constants as constants
 from . import valr_utils
-from .valr_auth import ValrAuth
 from .valr_active_order_tracker import ValrActiveOrderTracker
 from .valr_order_book import ValrOrderBook
 from .valr_websocket import ValrWebsocket, ValrWebSocketConnectionType
@@ -34,11 +33,10 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
             cls._logger = logging.getLogger(__name__)
         return cls._logger
 
-    def __init__(self, valr_auth: ValrAuth, trading_pairs: List[str] = None):
+    def __init__(self, trading_pairs: List[str] = None):
         super().__init__(trading_pairs)
         self._trading_pairs: List[str] = trading_pairs
         self._snapshot_msg: Dict[str, any] = {}
-        self._valr_auth: ValrAuth = valr_auth
 
     @classmethod
     async def get_last_traded_prices(cls, trading_pairs: List[str]) -> Dict[str, float]:
@@ -153,7 +151,7 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
         """
         while True:
             try:
-                ws = ValrWebsocket(self._valr_auth, ValrWebSocketConnectionType.TRADE)
+                ws = ValrWebsocket(ValrWebSocketConnectionType.TRADE)
                 await ws.connect()
 
                 # example subscribe message
@@ -208,15 +206,14 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
         """
         Listen for orderbook diffs using websocket book channel
         """
-        ws = ValrWebsocket(self._valr_auth, ValrWebSocketConnectionType.TRADE)
-        await ws.connect()
-
-        order_book_update_subscription = {
-            "event": "AGGREGATED_ORDERBOOK_UPDATE",
-            "pairs": [valr_utils.convert_to_exchange_trading_pair(pair) for pair in self._trading_pairs]
-        }
-        await ws.subscribe([(order_book_update_subscription)])
+        ws = ValrWebsocket(ValrWebSocketConnectionType.TRADE)
         while True:
+            await ws.connect()
+            order_book_update_subscription = {
+                "event": "AGGREGATED_ORDERBOOK_UPDATE",
+                "pairs": [valr_utils.convert_to_exchange_trading_pair(pair) for pair in self._trading_pairs]
+            }
+            await ws.subscribe([(order_book_update_subscription)])
             try:
 
                 # {

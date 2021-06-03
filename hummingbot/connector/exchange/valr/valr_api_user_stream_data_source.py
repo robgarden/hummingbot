@@ -41,8 +41,8 @@ class ValrAPIUserStreamDataSource(UserStreamTrackerDataSource):
         """
 
         try:
-            ws = ValrWebsocket(self._valr_auth, ValrWebSocketConnectionType.ACCOUNT)
-            await ws.connect()
+            ws = ValrWebsocket(ValrWebSocketConnectionType.ACCOUNT)
+            await ws.connect(self._valr_auth)
 
             # valr automatically subscibes to all events on ACCOUNT path (/ws/account)
             # await ws.subscribe(["user.order", "user.trade", "user.balance"])

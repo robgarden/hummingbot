@@ -38,19 +38,21 @@ class ValrWebsocket(RequestId):
             cls._logger = logging.getLogger(__name__)
         return cls._logger
 
-    def __init__(self, auth: ValrAuth, connection_type: ValrWebSocketConnectionType):
-        self._auth: ValrAuth = auth
+    def __init__(self, connection_type: ValrWebSocketConnectionType):
         self._connection_type: ValrWebSocketConnectionType = connection_type
         self._client: Optional[websockets.WebSocketClientProtocol] = None
 
     # connect to exchange
-    async def connect(self):
+    async def connect(self, valr_auth: ValrAuth = None):
         try:
             # authenticate using headers
             path = self._connection_type.valr_websocket_path()
-            timestamp = get_ms_timestamp()
-            signature = self._auth.generate_signature(path, "get", timestamp)
-            extra_headers = self._auth.get_headers(signature, timestamp)
+
+            extra_headers = {}
+            if valr_auth:
+                timestamp = get_ms_timestamp()
+                signature = valr_auth.generate_signature(path, "get", timestamp)
+                extra_headers = valr_auth.get_headers(signature, timestamp)
             ws_url = "%s%s" % (constants.WSS_URL, path)
             self._client = await websockets.connect(ws_url, extra_headers=extra_headers)
 
@@ -64,6 +66,7 @@ class ValrWebsocket(RequestId):
             return
 
         await self._client.close()
+        self._client = None
 
     # receive & parse messages
     async def _messages(self) -> AsyncIterable[Any]:

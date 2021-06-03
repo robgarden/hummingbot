@@ -83,7 +83,7 @@ class ValrExchange(ExchangeBase):
         self._trading_required = trading_required
         self._trading_pairs = trading_pairs
         self._valr_auth = ValrAuth(valr_api_key, valr_secret_key)
-        self._order_book_tracker = ValrOrderBookTracker(self._valr_auth, trading_pairs=trading_pairs)
+        self._order_book_tracker = ValrOrderBookTracker(trading_pairs=trading_pairs)
         self._user_stream_tracker = ValrUserStreamTracker(self._valr_auth, trading_pairs)
         self._ev_loop = asyncio.get_event_loop()
         self._shared_client = None
