@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from hummingbot.connector.exchange.valr import valr_constants
 import logging
 
 from sqlalchemy.engine import RowProxy
@@ -13,6 +12,7 @@ from hummingbot.core.data_type.order_book import OrderBook
 from hummingbot.core.data_type.order_book_message import (
     OrderBookMessage, OrderBookMessageType
 )
+from hummingbot.core.event.events import TradeType
 
 from .valr_order_book_message import ValrOrderBookMessage
 from . import valr_constants as constants
@@ -114,9 +114,9 @@ class ValrOrderBook(OrderBook):
 
         msg.update({
             "exchange_order_id": "hmm",
-            "trade_type": msg.get("takerSide"),
-            "price": msg.get("price"),
-            "amount": msg.get("quantity"),
+            "trade_type": float(TradeType.SELL.value) if msg.get("takerSide") == "sell" else float(TradeType.BUY.value),
+            "price": float(msg.get("price")),
+            "amount": float(msg.get("quantity")),
         })
 
         return ValrOrderBookMessage(

@@ -149,11 +149,10 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
         """
         Listen for trades using websocket trade channel
         """
+        ws = ValrWebsocket(ValrWebSocketConnectionType.TRADE)
         while True:
             try:
-                ws = ValrWebsocket(ValrWebSocketConnectionType.TRADE)
                 await ws.connect()
-
                 # example subscribe message
                 # {
                 #     "type": "SUBSCRIBE",
@@ -164,10 +163,10 @@ class ValrAPIOrderBookDataSource(OrderBookTrackerDataSource):
                 #         ]
                 #     }
                 # }
-                await ws.subscribe(list({
+                await ws.subscribe([{
                     "event": "NEW_TRADE",
                     "pairs": [valr_utils.convert_to_exchange_trading_pair(pair) for pair in self._trading_pairs]
-                }))
+                }])
 
                 async for response in ws.on_message():
                     # example response
