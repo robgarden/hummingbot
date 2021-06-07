@@ -326,7 +326,7 @@ class ValrExchange(ExchangeBase):
         :returns A response in json format.
         """
         url = f"{Constants.REST_URL}{path_url}"
-        self.logger().info(path_url)
+        # self.logger().info(path_url)
         client = await self._http_client()
         if is_auth_required:
             # request_id = valr_utils.RequestId.generate_request_id()
