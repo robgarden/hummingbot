@@ -61,6 +61,7 @@ connector_status = {
     'polkadex': 'bronze',
     'vertex': 'bronze',
     'vertex_testnet': 'bronze',
+    'valr': 'bronze',
 }
 
 warning_messages = {
