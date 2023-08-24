@@ -7,11 +7,8 @@ from hummingbot.core.data_type.order_book import OrderBook
 from hummingbot.core.data_type.order_book_message import OrderBookMessage, OrderBookMessageType
 
 
-def convert_order_data(data: Dict[str, any]) -> Dict[str, any]:
-    return {
-        "price": data["price"],
-        "amount": data["quantity"],
-    }
+def convert_order_data(data: Dict[str, any]) -> list[str]:
+    return [data["price"], data["quantity"]]
 
 
 class ValrOrderBook(OrderBook):

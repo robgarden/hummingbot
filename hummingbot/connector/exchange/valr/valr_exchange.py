@@ -120,6 +120,7 @@ class ValrExchange(ExchangePyBase):
 
     async def _place_order(self, order_id: str, trading_pair: str, amount: Decimal, trade_type: TradeType,
                            order_type: OrderType, price: Decimal, **kwargs) -> Tuple[str, float]:
+        raise NotImplementedError
         amount_str = f"{amount:f}"
         side_str = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from hummingbot.connector.exchange.valr import valr_constants as CONSTANTS, valr_web_utils as web_utils
 from hummingbot.connector.exchange.valr.valr_order_book import ValrOrderBook
+from hummingbot.connector.exchange.valr.valr_order_book_events_proxy import ValrOrderBookEventsProxy
 from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod, WSJSONRequest
@@ -33,6 +34,7 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
         self._diff_messages_queue_key = CONSTANTS.FULL_ORDERBOOK_UPDATE_EVENT_TYPE
         self._snapshot_messages_queue_key = CONSTANTS.FULL_ORDERBOOK_SNAPSHOT_EVENT_TYPE
         self._api_factory = api_factory
+        self._valr_order_book_events_proxy = ValrOrderBookEventsProxy()
 
     async def get_last_traded_prices(self,
                                      trading_pairs: List[str],
@@ -120,9 +122,10 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["currencyPairSymbol"])
-        order_book_message: OrderBookMessage = ValrOrderBook.diff_message_from_exchange(
-            raw_message, time.time(), {"trading_pair": trading_pair})
-        message_queue.put_nowait(order_book_message)
+        self._valr_order_book_events_proxy.add_diff_message_to_queue(raw_message, trading_pair)
+        # order_book_message: OrderBookMessage = ValrOrderBook.diff_message_from_exchange(
+        #     raw_message, time.time(), {"trading_pair": trading_pair})
+        # message_queue.put_nowait(order_book_message)
 
     async def _parse_order_book_snapshot_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         """
@@ -158,17 +161,17 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
                       }
                     ]
                   },
-                ]
+                ],
+                "SequenceNumber": 123213,
+                "Checksum": 1231313,
               },
-              "SequenceNumber": 123213
             }
         """
-        # with open("order-book-snapshot-ws.txt", "w") as f:
-        #     f.write(json.dumps(raw_message))
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["currencyPairSymbol"])
-        order_book_message: OrderBookMessage = ValrOrderBook.snapshot_message_from_exchange(
-            raw_message["data"], time.time(), {"trading_pair": trading_pair, "source": "ws"})
-        message_queue.put_nowait(order_book_message)
+        await self._valr_order_book_events_proxy.add_snapshot_message_to_queue(raw_message, trading_pair, message_queue)
+        # order_book_message: OrderBookMessage = ValrOrderBook.snapshot_message_from_exchange(
+        #     raw_message["data"], time.time(), {"trading_pair": trading_pair, "source": "ws"})
+        # message_queue.put_nowait(order_book_message)
 
     def _channel_originating_message(self, event_message: Dict[str, Any]) -> str:
         event_type = event_message.get("type")
