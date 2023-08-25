@@ -12,9 +12,14 @@ from hummingbot.logger import HummingbotLogger
 class ValrOrderBookEventsProxy():
     _logger: Optional[HummingbotLogger] = None
 
+    """
+        order book with price bands as keys
+    """
+    _order_book: Dict[str, Any] = {}
+    _diff_buffer: List[Dict[str, Any]] = []
+
     def __init__(self):
-        self.order_book: Dict[str, Any] = {}
-        self._diff_buffer: List[Dict[str, Any]] = []
+        pass
 
     @classmethod
     def logger(cls) -> HummingbotLogger:
@@ -23,62 +28,93 @@ class ValrOrderBookEventsProxy():
         return cls._logger
 
     def convert_order_book_format(self):
+        """
+            formatted_order_book with array format
+        """
+
+        def format_price_bands(side: str):
+            bands = []
+            for price, orders in self._order_book[side].items():
+                band = {
+                    "price": float(price),
+                    "quantity": sum([float(o["quantity"]) for o in orders]),
+                }
+                bands.append(band)
+            return bands
+
         return {
-            "SequenceNumber": self.order_book["SequenceNumber"],
-            "Asks": [{"price": float(a["Price"]), "quantity": sum([float(o["quantity"]) for o in a["Orders"]])} for a in
-                     self.order_book["Asks"]],
-            "Bids": [{"price": float(b["Price"]), "quantity": sum([float(o["quantity"]) for o in b["Orders"]])} for b in
-                     self.order_book["Bids"]],
+            "SequenceNumber": self._order_book["SequenceNumber"],
+            "Bids": format_price_bands("Bids"),
+            "Asks": format_price_bands("Asks"),
         }
 
     async def add_snapshot_message_to_queue(self, snapshot_message: Dict[str, Any], trading_pair: str,
                                             message_queue: asyncio.Queue):
+        def parse_side(side: str, data: Dict[str, Any]) -> Dict[str, Any]:
+            side_dict = {}
+            for band in data[side]:
+                side_dict[band["Price"]] = band["Orders"]
+            return side_dict
+
         self.logger().info("Received snapshot message in proxy")
 
         data = snapshot_message["data"]
-        self.order_book = {
-            "Asks": [{"Price": a["Price"],
-                      "Orders": [{"orderId": o["orderId"], "quantity": o["quantity"]} for o in a["Orders"]]} for
-                     a in data["Asks"]],
-            "Bids": [{"Price": b["Price"],
-                      "Orders": [{"orderId": o["orderId"], "quantity": o["quantity"]} for o in b["Orders"]]} for
-                     b in data["Bids"]],
+        new_order_book = {
             "SequenceNumber": data["SequenceNumber"],
-            "LastChange": data["LastChange"]
+            "Bids": parse_side("Bids", data),
+            "Asks": parse_side("Asks", data),
         }
 
-        calculated_checksum = self.calculate_checksum(self.order_book)
+        calculated_checksum = self.calculate_checksum(new_order_book)
         if calculated_checksum != data["Checksum"]:
             self.logger().error("Order book snapshot checksum error")
             raise AssertionError
+
+        self._order_book = new_order_book
 
         order_book_message: OrderBookMessage = ValrOrderBook.snapshot_message_from_exchange(
             self.convert_order_book_format(), time.time(), {"trading_pair": trading_pair})
         message_queue.put_nowait(order_book_message)
 
-    def add_diff_message_to_queue(self, diff_message: Dict[str, Any], trading_pair: str):
+    async def add_diff_message_to_queue(self, diff_message: Dict[str, Any], trading_pair: str, queue: asyncio.Queue):
         # self.logger().info("Received diff message in proxy")
         self._diff_buffer.append(diff_message)
 
-        if len(self.order_book):
-            next_sequence_number = self.order_book["SequenceNumber"] + 1
-            self.logger().info("Next sequence number: %s - Found %s" % (
-                next_sequence_number, self._diff_buffer[0]["data"]["SequenceNumber"]))
-            found_diff_message = [dm for dm in self._diff_buffer if
-                                  dm["data"]["SequenceNumber"] == next_sequence_number]
+        if len(self._order_book):
+            next_sequence_number = self._order_book["SequenceNumber"] + 1
 
-            if found_diff_message:
-                self.logger().info("Found next diff message")
-                new_book = self.apply_diff(diff_message)
-                self.order_book = new_book
-                self._diff_buffer = [dm for dm in self._diff_buffer if
-                                     dm["data"]["SequenceNumber"] > next_sequence_number]
+            # drop all diffs earlier than the current book
+            self._diff_buffer = [dm for dm in self._diff_buffer if
+                                 dm["data"]["SequenceNumber"] >= next_sequence_number]
 
-    def calculate_checksum(self, book: Dict[str, Any]) -> int:
+            while True:
+                if len(self._diff_buffer):
+                    first_diff = self._diff_buffer[0]
+                    first_diff_sequence_number = first_diff["data"]["SequenceNumber"]
+                    self.logger().info("Next sequence number=%s - First diff=%s" % (
+                        next_sequence_number, first_diff_sequence_number))
+
+                    if not first_diff_sequence_number == next_sequence_number:
+                        return
+
+                    new_book = self.apply_diff(first_diff)
+
+                    calculated_checksum = self.calculate_checksum(new_book)
+                    expected_checksum = diff_message["data"]["Checksum"]
+
+                    self.logger().info(
+                        "Calculated checksum=%s - Expected checksum=%s" % (calculated_checksum, expected_checksum))
+
+                    self._order_book = new_book
+                    self._diff_buffer = self._diff_buffer[1:]
+
+    @staticmethod
+    def calculate_checksum(book: Dict[str, Any]) -> int:
         def select_best_orders(side: str) -> List[any]:
-            side_sorted = sorted(book[side], key=lambda s: float(s["Price"]), reverse=side == "Bids")
+            bands = [{"Price": price, "Orders": orders} for price, orders in book[side].items()]
+            bands_sorted = sorted(bands, key=lambda s: float(s["Price"]), reverse=side == "Bids")
             retval = []
-            for priceLevel in side_sorted:
+            for priceLevel in bands_sorted:
                 for order in priceLevel["Orders"]:
                     if len(retval) == 25:
                         return retval
@@ -88,69 +124,45 @@ class ValrOrderBookEventsProxy():
         bids = select_best_orders("Bids")
         asks = select_best_orders("Asks")
 
-        orders = []
+        orders_str = []
         for i in range(25):
             try:
-                orders.append(bids[i])
+                orders_str.append(bids[i])
             finally:
                 pass
             try:
-                orders.append(asks[i])
+                orders_str.append(asks[i])
             finally:
                 pass
 
-        return zlib.crc32(":".join(orders).encode("utf-8"))
+        return zlib.crc32(":".join(orders_str).encode("utf-8"))
 
     def apply_diff(self, diff_message: Dict[str, Any]) -> Dict[str, Any]:
-        temp = self.order_book.copy()
-        for ask in diff_message["data"]["Asks"]:
-            price = ask["Price"]
-            temp_ask = [a for a in temp["Asks"] if a["Price"] == price]
-            if not temp_ask:
-                temp["Asks"].append({
-                    "Price": price,
-                    "Orders": ask["Orders"]
-                })
-            else:
-                temp_ask[0]["Orders"] = [o if o["orderId"] not in [aa["orderId"] for aa in ask["Orders"]] else
-                                         [aa for aa in ask["Orders"] if o["orderId"] == aa["orderId"]][0] for o in
-                                         temp_ask[0]["Orders"]]
+        def parse_side(side: str, data: Dict[str, Any]) -> Dict[str, Any]:
+            side_dict = {}
+            for band in data[side]:
+                side_dict[band["Price"]] = band["Orders"]
+            return side_dict
 
-        for bid in diff_message["data"]["Bids"]:
-            price = bid["Price"]
-            temp_bid = [b for b in temp["Bids"] if b["Price"] == price]
-            if not temp_bid:
-                temp["Bids"].append({
-                    "Price": price,
-                    "Orders": bid["Orders"]
-                })
-            else:
-                temp_bid[0]["Orders"] = [o if o["orderId"] not in [bb["orderId"] for bb in bid["Orders"]] else
-                                         [bb for bb in bid["Orders"] if o["orderId"] == bb["orderId"]][0] for o in
-                                         temp_bid[0]["Orders"]]
+        def calculate_new_side(side: str, book: Dict[str, Any]) -> Dict[str, Any]:
+            new_side = {}
+            parsed_diff_side = parse_side(side, diff_message["data"])
+            for price, orders in book[side].items():
+                new_orders = []
+                diff_orders = parsed_diff_side.get(price, [])
 
-        # remove 0 quantity orders
-        temp["Asks"] = [{"Price": a["Price"], "Orders": [o for o in a["Orders"] if o["quantity"] != "0"]} for a in
-                        temp["Asks"]]
-        temp["Bids"] = [{"Price": b["Price"], "Orders": [o for o in b["Orders"] if o["quantity"] != "0"]} for b in
-                        temp["Bids"]]
+                for o in orders:
+                    updated_order = ([do for do in diff_orders if do["orderId"] == o["orderId"]] or [o])[0]
+                    if updated_order["quantity"] != "0":
+                        new_orders.append(
+                            {"orderId": updated_order["orderId"], "quantity": updated_order["quantity"]})
 
-        # remove price bands with no orders
-        temp["Asks"] = [a for a in temp["Asks"] if len(a["Orders"])]
-        temp["Bids"] = [b for b in temp["Bids"] if len(b["Orders"])]
-        temp["SequenceNumber"] = diff_message["data"]["SequenceNumber"]
+                if new_orders:
+                    new_side[price] = new_orders
+            return new_side
 
-        self.logger().info(temp)
-
-        calculated_checksum = self.calculate_checksum(temp)
-        actual_checksum = diff_message["data"]["Checksum"]
-
-        self.logger().info("Calculated checksum: %s" % calculated_checksum)
-        self.logger().info("Actual checksum: %s" % actual_checksum)
-        return temp
-
-    # def calculate_diff(self, diff_message: Dict[str, Any]) -> Dict[str, Any]:
-    #     data = diff_message["data"]
-    #     return {
-    #         "Asks": [{"Price":} for a]
-    #     }
+        return {
+            "SequenceNumber": diff_message["data"]["SequenceNumber"],
+            "Bids": calculate_new_side("Bids", self._order_book),
+            "Asks": calculate_new_side("Asks", self._order_book),
+        }

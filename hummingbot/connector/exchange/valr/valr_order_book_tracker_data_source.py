@@ -122,7 +122,7 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
 
     async def _parse_order_book_diff_message(self, raw_message: Dict[str, Any], message_queue: asyncio.Queue):
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["currencyPairSymbol"])
-        self._valr_order_book_events_proxy.add_diff_message_to_queue(raw_message, trading_pair)
+        await self._valr_order_book_events_proxy.add_diff_message_to_queue(raw_message, trading_pair, message_queue)
         # order_book_message: OrderBookMessage = ValrOrderBook.diff_message_from_exchange(
         #     raw_message, time.time(), {"trading_pair": trading_pair})
         # message_queue.put_nowait(order_book_message)
