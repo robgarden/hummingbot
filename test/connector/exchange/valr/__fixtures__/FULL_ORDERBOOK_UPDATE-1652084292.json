@@ -1,0 +1,138 @@
+{
+  "type": "FULL_ORDERBOOK_UPDATE",
+  "currencyPairSymbol": "BTCZAR",
+  "data": {
+    "LastChange": 1692977345006,
+    "Asks": [
+      {
+        "Price": "495728",
+        "Orders": [
+          {
+            "orderId": "c6ab308d-e04e-4d2c-bd2e-6073e918ab1f",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "495825",
+        "Orders": [
+          {
+            "orderId": "9836c390-728b-47dd-b497-50090b9c9749",
+            "quantity": "0.07710223"
+          },
+          {
+            "orderId": "9836c390-728b-47dd-b497-50090b9c9749",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "495924",
+        "Orders": [
+          {
+            "orderId": "424675de-050e-4cb7-a361-3e11d55e15da",
+            "quantity": "0.07708684"
+          },
+          {
+            "orderId": "424675de-050e-4cb7-a361-3e11d55e15da",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "495972",
+        "Orders": [
+          {
+            "orderId": "8a807513-3499-46d2-85db-498ba050c2a5",
+            "quantity": "0.04051174"
+          }
+        ]
+      },
+      {
+        "Price": "496134",
+        "Orders": [
+          {
+            "orderId": "26fbe584-1e08-4da5-bbe9-691d2f946bbc",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "496140",
+        "Orders": [
+          {
+            "orderId": "75fd4de8-435f-4994-96ad-e2fceaf43e8f",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "496574",
+        "Orders": [
+          {
+            "orderId": "682f55ce-4e6b-4dfd-97d8-b3e804a6e5a2",
+            "quantity": "0.0129939"
+          }
+        ]
+      }
+    ],
+    "Bids": [
+      {
+        "Price": "495515",
+        "Orders": [
+          {
+            "orderId": "a1165302-25e3-4b94-9a6a-eaf58d97ae58",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "495015",
+        "Orders": [
+          {
+            "orderId": "ad6b1585-4262-4ff4-9637-73bc98d9b707",
+            "quantity": "0.19635963"
+          }
+        ]
+      },
+      {
+        "Price": "494763",
+        "Orders": [
+          {
+            "orderId": "4ff3af3b-41ce-4f78-acf2-043e3c7ed495",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "494762",
+        "Orders": [
+          {
+            "orderId": "5efad4fd-14d0-4695-b7fb-f4c345d6334a",
+            "quantity": "0.31739028"
+          }
+        ]
+      },
+      {
+        "Price": "494761",
+        "Orders": [
+          {
+            "orderId": "f7e9ce61-877c-44c6-aaa3-0552a8609aa6",
+            "quantity": "0"
+          }
+        ]
+      },
+      {
+        "Price": "494556",
+        "Orders": [
+          {
+            "orderId": "cec33af4-0ed4-40c8-8bda-2fcb31b1a239",
+            "quantity": "0"
+          }
+        ]
+      }
+    ],
+    "SequenceNumber": 1652084292,
+    "Checksum": 92742157
+  }
+}

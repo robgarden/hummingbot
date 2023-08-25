@@ -1,0 +1,21 @@
+{
+  "type": "FULL_ORDERBOOK_UPDATE",
+  "currencyPairSymbol": "BTCZAR",
+  "data": {
+    "LastChange": 1692977343851,
+    "Asks": [
+      {
+        "Price": "498834",
+        "Orders": [
+          {
+            "orderId": "4aa2f694-f870-40b2-94c7-61b832db1916",
+            "quantity": "0.1"
+          }
+        ]
+      }
+    ],
+    "Bids": [],
+    "SequenceNumber": 1652084267,
+    "Checksum": 2608357888
+  }
+}
