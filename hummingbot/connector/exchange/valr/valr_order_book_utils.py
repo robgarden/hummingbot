@@ -55,7 +55,6 @@ def calculate_checksum(book: Dict[str, Any]) -> int:
     def select_best_orders(side: str) -> List[any]:
         reverse = side == "Bids"
         price_levels_sorted = sorted(book[side], key=lambda s: float(s["Price"]), reverse=reverse)
-        # print(bands_sorted[:25])
         retval = []
         for price_level in price_levels_sorted:
             for order in price_level["Orders"]:

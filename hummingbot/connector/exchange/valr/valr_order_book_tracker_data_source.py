@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -105,8 +104,6 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
 
     async def _order_book_snapshot(self, trading_pair: str) -> OrderBookMessage:
         snapshot: Dict[str, Any] = await self._request_order_book_snapshot(trading_pair)
-        # with open("open-book-snapshot-rest.txt", "w") as f:
-        #     f.write(json.dumps(snapshot))
         snapshot_timestamp: float = time.time()
         snapshot_msg: OrderBookMessage = ValrOrderBook.snapshot_message_from_exchange(
             snapshot,
@@ -170,9 +167,6 @@ class ValrOrderBookTrackerDataSource(OrderBookTrackerDataSource):
             }
         """
 
-        with open("dump/%s-%s.json" % (raw_message["type"], raw_message["data"]["SequenceNumber"]), 'w') as f:
-            f.write(json.dumps(raw_message))
-        # self.logger().info("%s-%s" % (raw_message["type"], raw_message["data"]["SequenceNumber"]))
         trading_pair = await self._connector.trading_pair_associated_to_exchange_symbol(symbol=raw_message["currencyPairSymbol"])
         await self._valr_order_book_events_proxy.process_message(raw_message, trading_pair, message_queue)
 
