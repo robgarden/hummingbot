@@ -120,7 +120,6 @@ class ValrExchange(ExchangePyBase):
 
     async def _place_order(self, order_id: str, trading_pair: str, amount: Decimal, trade_type: TradeType,
                            order_type: OrderType, price: Decimal, **kwargs) -> Tuple[str, float]:
-        raise NotImplementedError
         amount_str = f"{amount:f}"
         side_str = CONSTANTS.SIDE_BUY if trade_type is TradeType.BUY else CONSTANTS.SIDE_SELL
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=trading_pair)
@@ -176,19 +175,23 @@ class ValrExchange(ExchangePyBase):
         pass
 
     async def _format_trading_rules(self, exchange_info_dict: List[Dict[str, Any]]) -> List[TradingRule]:
+        # TODO: figure the correct relation between VALRs values and HB expected values
         trading_pair_rules = exchange_info_dict
         rules = []
         for rule in filter(valr_utils.is_exchange_information_valid, trading_pair_rules):
             try:
                 trading_pair = await self.trading_pair_associated_to_exchange_symbol(symbol=rule.get("symbol"))
                 min_order_size = Decimal(rule.get("minBaseAmount"))
+                min_order_value = Decimal(rule.get("minQuoteAmount"))
                 tick_size = rule.get("tickSize")
 
                 rules.append(
                     TradingRule(trading_pair,
                                 min_order_size=min_order_size,
+                                min_order_value=min_order_value,
                                 min_price_increment=Decimal(tick_size),
-                                min_base_amount_increment=min_order_size))
+                                min_base_amount_increment=min_order_size)
+                )
 
             except Exception:
                 self.logger().exception(f"Error parsing the trading pair rule {rule}. Skipping.")
@@ -216,8 +219,8 @@ class ValrExchange(ExchangePyBase):
             del self._account_available_balances[asset_name]
             del self._account_balances[asset_name]
 
-    # TODO filled quote
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
+        # TODO filled quote
         trade_updates = []
 
         if order.exchange_order_id is not None:
