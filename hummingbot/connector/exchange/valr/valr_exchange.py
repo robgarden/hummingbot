@@ -1,3 +1,4 @@
+import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from _decimal import Decimal
@@ -135,7 +136,8 @@ class ValrExchange(ExchangePyBase):
             data.update({
                 "quantity": amount_str,
                 "price": price_str,
-                "timeInForce": CONSTANTS.TIME_IN_FORCE_GTC
+                "timeInForce": CONSTANTS.TIME_IN_FORCE_GTC,
+                "postOnly": order_type is OrderType.LIMIT,
             })
 
         if order_type == OrderType.MARKET:
@@ -172,6 +174,30 @@ class ValrExchange(ExchangePyBase):
         pass
 
     async def _user_stream_event_listener(self):
+        async for event_message in self._iter_user_event_queue():
+            try:
+                event_type = event_message.get("type")
+                if event_type == CONSTANTS.BALANCE_UPDATE_EVENT_TYPE:
+                    # TODO: update balances
+                    pass
+                elif event_type == CONSTANTS.ORDER_STATUS_UPDATE_EVENT_TYPE:
+                    data = event_message.get("data")
+                    client_order_id = data["customerOrderId"]
+                    tracked_order = self._order_tracker.all_updatable_orders.get(client_order_id)
+                    if tracked_order is not None:
+                        order_update = OrderUpdate(
+                            trading_pair=tracked_order.trading_pair,
+                            update_timestamp=iso_to_epoch_seconds(data["orderUpdatedAt"]),
+                            new_state=CONSTANTS.ORDER_STATE[data["orderStatusType"]],
+                            client_order_id=client_order_id,
+                            exchange_order_id=data["orderId"],
+                        )
+                        self._order_tracker.process_order_update(order_update=order_update)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger().error("Unexpected error in user stream listener loop.", exc_info=True)
+                await self._sleep(5.0)
         pass
 
     async def _format_trading_rules(self, exchange_info_dict: List[Dict[str, Any]]) -> List[TradingRule]:
@@ -220,22 +246,32 @@ class ValrExchange(ExchangePyBase):
             del self._account_balances[asset_name]
 
     async def _all_trade_updates_for_order(self, order: InFlightOrder) -> List[TradeUpdate]:
-        # TODO filled quote
+        """
+        TODO: filled quote amount and fees
+        Fee currency:
+            If you are a Maker and you are Buying BTC with ZAR, your reward will be paid in ZAR
+            If you are a Maker and you are Selling BTC for ZAR, your reward will be paid in BTC
+            If you are a Taker and you are Buying BTC with ZAR, your fee will be charged in BTC
+            If you are a Taker and you are Selling BTC for ZAR, your fee will be charged in ZAR
+        """
         trade_updates = []
 
         if order.exchange_order_id is not None:
             trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
             all_fills_response = await self._api_get(
-                path_url=CONSTANTS.TRADE_HISTORY_PATH_URL.format(trading_pair),
+                path_url=CONSTANTS.TRADE_HISTORY_PATH_URL % trading_pair,
                 is_auth_required=True,
                 limit_id=CONSTANTS.TRADE_HISTORY_PATH_URL)
+
+            fee_currency = valr_utils.get_fee_currency(order)
 
             for trade in all_fills_response:
                 exchange_order_id = str(trade["orderId"])
                 fee = TradeFeeBase.new_spot_fee(
                     fee_schema=self.trade_fee_schema(),
                     trade_type=order.trade_type,
-                    percent_token=trade["commissionAsset"]
+                    # TODO: is this needed?
+                    percent_token=fee_currency
                 )
                 trade_update = TradeUpdate(
                     trade_id=str(trade["id"]),
@@ -257,7 +293,8 @@ class ValrExchange(ExchangePyBase):
         trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
         updated_order_data = await self._api_get(
             path_url=CONSTANTS.ORDER_STATUS_PATH_URL.format(trading_pair, tracked_order.client_order_id),
-            is_auth_required=True)
+            is_auth_required=True,
+            limit_id=CONSTANTS.ORDER_STATUS_PATH_URL)
 
         new_state = CONSTANTS.ORDER_STATE[updated_order_data["orderStatusType"]]
 

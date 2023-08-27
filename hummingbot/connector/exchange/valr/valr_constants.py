@@ -26,7 +26,7 @@ ORDERS_MARKET_PATH_URL = "/v1/orders/market"
 ORDERS_BATCH_PATH_URL = "/v1/batch/orders"
 ORDER_STATUS_PATH_URL = "/v1/orders/{}/customerorderid/{}"
 ORDER_BOOK_FULL_PATH_URL = "/v1/marketdata/%s/orderbook/full"
-TRADE_HISTORY_PATH_URL = "/v1/{}/tradehistory"
+TRADE_HISTORY_PATH_URL = "/v1/account/%s/tradehistory"
 
 # Websocket endpoints
 WSS_ACCOUNT_PATH = "/ws/account"
@@ -51,10 +51,11 @@ ONE_SECOND = 1
 ORDER_STATE = {
     "Pending": OrderState.PENDING_CREATE,
     "New": OrderState.OPEN,
+    "Placed": OrderState.OPEN,
     "Filled": OrderState.FILLED,
     "Partially Filled": OrderState.PARTIALLY_FILLED,
     "Pending Cancel": OrderState.OPEN,
-    "Canceled": OrderState.CANCELED,
+    "Cancelled": OrderState.CANCELED,
     "Rejected": OrderState.FAILED,
     "Expired": OrderState.FAILED,
 }
@@ -64,6 +65,7 @@ FULL_ORDERBOOK_SNAPSHOT_EVENT_TYPE = "FULL_ORDERBOOK_SNAPSHOT"
 FULL_ORDERBOOK_UPDATE_EVENT_TYPE = "FULL_ORDERBOOK_UPDATE"
 NEW_TRADE_EVENT_TYPE = "NEW_TRADE"
 BALANCE_UPDATE_EVENT_TYPE = 'BALANCE_UPDATE'
+ORDER_STATUS_UPDATE_EVENT_TYPE = 'ORDER_STATUS_UPDATE'
 
 # Rate limits
 ALL_HTTP_LIMIT_ID = "ALL_HTTP_LIMIT_ID"
@@ -109,6 +111,8 @@ RATE_LIMITS = [
               linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
     RateLimit(limit_id=BALANCES_PATH_URL, limit=ALL_HTTP_LIMIT, time_interval=ALL_HTTP_LIMIT_INTERVAL,
               linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
+    RateLimit(limit_id=TRADE_HISTORY_PATH_URL, limit=ALL_HTTP_LIMIT, time_interval=ALL_HTTP_LIMIT_INTERVAL,
+              linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
 
     RateLimit(limit_id=ORDERS_CANCEL_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
@@ -118,7 +122,9 @@ RATE_LIMITS = [
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
     RateLimit(limit_id=ORDERS_BATCH_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
-    RateLimit(limit_id=ORDER_BOOK_FULL_PATH_URL, limit=1000, time_interval=ONE_MINUTE,
+    RateLimit(limit_id=ORDER_BOOK_FULL_PATH_URL, limit=230, time_interval=ONE_SECOND,
+              linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
+    RateLimit(limit_id=ORDER_STATUS_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
 ]
 
