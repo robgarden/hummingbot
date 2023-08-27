@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import json
 from typing import Any, Dict, Optional
 
 from hummingbot.connector.exchange.valr import valr_constants as CONSTANTS
@@ -55,6 +54,6 @@ class ValrAuth(AuthBase):
             body - http request body as a string, optional
         """
 
-        body_string = json.dumps(body) if body else ""
+        body_string = body or ""
         payload = "{}{}{}{}".format(timestamp, verb.upper(), path, body_string)
         return hmac.new(self.secret_key.encode('utf-8'), payload.encode("utf-8"), hashlib.sha512).hexdigest()
