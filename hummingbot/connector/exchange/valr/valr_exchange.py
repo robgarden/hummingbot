@@ -105,7 +105,9 @@ class ValrExchange(ExchangePyBase):
         pass
 
     def _is_order_not_found_during_cancelation_error(self, cancelation_exception: Exception) -> bool:
-        pass
+        return str(CONSTANTS.ORDER_NOT_EXIST_ERROR_CODE) in str(
+            cancelation_exception
+        ) and CONSTANTS.ORDER_NOT_EXIST_MESSAGE in str(cancelation_exception)
 
     async def _place_cancel(self, order_id: str, tracked_order: InFlightOrder):
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair=tracked_order.trading_pair)
@@ -269,14 +271,14 @@ class ValrExchange(ExchangePyBase):
 
         if order.exchange_order_id is not None:
             trading_pair = await self.exchange_symbol_associated_to_pair(trading_pair=order.trading_pair)
-            all_fills_response = await self._api_get(
-                path_url=CONSTANTS.TRADE_HISTORY_PATH_URL % trading_pair,
+            trade_history_response = await self._api_get(
+                path_url="%s?limit=100" % (CONSTANTS.TRADE_HISTORY_PATH_URL % trading_pair),
                 is_auth_required=True,
                 limit_id=CONSTANTS.TRADE_HISTORY_PATH_URL)
 
             fee_currency = valr_utils.get_fee_currency(order)
 
-            for trade in all_fills_response:
+            for trade in [t for t in trade_history_response if t["orderId"] == order.exchange_order_id]:
                 exchange_order_id = str(trade["orderId"])
                 fee = TradeFeeBase.new_spot_fee(
                     fee_schema=self.trade_fee_schema(),
@@ -284,8 +286,9 @@ class ValrExchange(ExchangePyBase):
                     # TODO: is this needed?
                     percent_token=fee_currency
                 )
+
                 trade_update = TradeUpdate(
-                    trade_id=str(trade["id"]),
+                    trade_id=trade["id"],
                     client_order_id=order.client_order_id,
                     exchange_order_id=exchange_order_id,
                     trading_pair=trading_pair,

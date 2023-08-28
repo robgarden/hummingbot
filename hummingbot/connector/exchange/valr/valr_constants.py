@@ -25,6 +25,8 @@ ORDERS_LIMIT_PATH_URL = "/v1/orders/limit"
 ORDERS_MARKET_PATH_URL = "/v1/orders/market"
 ORDERS_BATCH_PATH_URL = "/v1/batch/orders"
 ORDER_STATUS_PATH_URL = "/v1/orders/{}/customerorderid/{}"
+ORDER_STATUS_HISTORY_BY_ORDER_ID_PATH_URL = "/v1/orders/history/detail/orderid/%s"
+ORDER_STATUS_HISTORY_BY_CUSTOMER_ORDER_ID_PATH_URL = "/v1/orders/history/detail/customerorderid/%s"
 ORDER_BOOK_FULL_PATH_URL = "/v1/marketdata/%s/orderbook/full"
 TRADE_HISTORY_PATH_URL = "/v1/account/%s/tradehistory"
 
@@ -116,6 +118,10 @@ RATE_LIMITS = [
               linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
     RateLimit(limit_id=TRADE_HISTORY_PATH_URL, limit=ALL_HTTP_LIMIT, time_interval=ALL_HTTP_LIMIT_INTERVAL,
               linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
+    RateLimit(limit_id=ORDER_STATUS_HISTORY_BY_ORDER_ID_PATH_URL, limit=ALL_HTTP_LIMIT, time_interval=ALL_HTTP_LIMIT_INTERVAL,
+              linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
+    RateLimit(limit_id=ORDER_STATUS_HISTORY_BY_CUSTOMER_ORDER_ID_PATH_URL, limit=ALL_HTTP_LIMIT, time_interval=ALL_HTTP_LIMIT_INTERVAL,
+              linked_limits=[LinkedLimitWeightPair(ALL_HTTP_LIMIT_ID)]),
 
     RateLimit(limit_id=ORDERS_CANCEL_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
@@ -135,7 +141,7 @@ RATE_LIMITS = [
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
 ]
 
-# ORDER_NOT_EXIST_ERROR_CODE = -2013
-# ORDER_NOT_EXIST_MESSAGE = "Order does not exist"
+ORDER_NOT_EXIST_ERROR_CODE = -16
+ORDER_NOT_EXIST_MESSAGE = "Could not find the order to cancel"
 # UNKNOWN_ORDER_ERROR_CODE = -2011
 # UNKNOWN_ORDER_MESSAGE = "Unknown order sent"
