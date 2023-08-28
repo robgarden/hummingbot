@@ -89,7 +89,7 @@ class ValrExchange(ExchangePyBase):
 
     @property
     def is_cancel_request_in_exchange_synchronous(self) -> bool:
-        return False
+        return True
 
     @property
     def is_trading_required(self) -> bool:
@@ -113,10 +113,17 @@ class ValrExchange(ExchangePyBase):
             "customerOrderId": order_id,
             "pair": symbol,
         }
-        await self._api_delete(
-            path_url=CONSTANTS.ORDERS_CANCEL_PATH_URL,
-            data=data,
-            is_auth_required=True)
+
+        try:
+            await self._api_delete(
+                path_url=CONSTANTS.ORDERS_CANCEL_V2_PATH_URL,
+                data=data,
+                is_auth_required=True,
+                limit_id=CONSTANTS.ORDERS_CANCEL_V2_PATH_URL)
+            return True
+        except Exception as e:
+            self.logger().warning("Error cancelling order %s: %s" % (order_id, e))
+
         return False
 
     async def _place_order(self, order_id: str, trading_pair: str, amount: Decimal, trade_type: TradeType,

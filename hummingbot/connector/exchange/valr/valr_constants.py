@@ -28,6 +28,9 @@ ORDER_STATUS_PATH_URL = "/v1/orders/{}/customerorderid/{}"
 ORDER_BOOK_FULL_PATH_URL = "/v1/marketdata/%s/orderbook/full"
 TRADE_HISTORY_PATH_URL = "/v1/account/%s/tradehistory"
 
+# V2
+ORDERS_CANCEL_V2_PATH_URL = "/v2/orders/order"
+
 # Websocket endpoints
 WSS_ACCOUNT_PATH = "/ws/account"
 WSS_ACCOUNT_URL = WSS_URL + WSS_ACCOUNT_PATH
@@ -125,6 +128,10 @@ RATE_LIMITS = [
     RateLimit(limit_id=ORDER_BOOK_FULL_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
     RateLimit(limit_id=ORDER_STATUS_PATH_URL, limit=230, time_interval=ONE_SECOND,
+              linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
+
+    # V2
+    RateLimit(limit_id=ORDERS_CANCEL_V2_PATH_URL, limit=230, time_interval=ONE_SECOND,
               linked_limits=[LinkedLimitWeightPair(HIGH_RPS_LIMIT_ID)]),
 ]
 
