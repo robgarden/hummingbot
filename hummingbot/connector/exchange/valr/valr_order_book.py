@@ -7,8 +7,8 @@ from hummingbot.core.data_type.order_book import OrderBook
 from hummingbot.core.data_type.order_book_message import OrderBookMessage, OrderBookMessageType
 
 
-def convert_order_data(data: Dict[str, any]) -> list[str]:
-    return [data["price"], data["quantity"]]
+def convert_order_data(data: Dict[str, any]) -> list[float]:
+    return [float(data["price"]), float(data["quantity"])]
 
 
 class ValrOrderBook(OrderBook):
@@ -73,6 +73,6 @@ class ValrOrderBook(OrderBook):
             "trade_type": float(TradeType.SELL.value) if msg["data"]["takerSide"] == "sell" else float(
                 TradeType.BUY.value),
             "update_id": ts,
-            "price": msg["data"]["price"],
-            "amount": msg["data"]["quantity"]
+            "price": float(msg["data"]["price"]),
+            "amount": float(msg["data"]["quantity"]),
         }, timestamp=ts * 1e-3)
