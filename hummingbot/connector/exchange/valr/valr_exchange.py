@@ -185,8 +185,13 @@ class ValrExchange(ExchangePyBase):
             try:
                 event_type = event_message.get("type")
                 if event_type == CONSTANTS.BALANCE_UPDATE_EVENT_TYPE:
-                    # TODO: update balances
-                    pass
+                    balance_entry = event_message.get("data")
+                    asset_name = balance_entry["currency"]["shortName"]
+                    available_balance = Decimal(balance_entry["available"])
+                    total_balance = Decimal(balance_entry["total"])
+                    self._account_available_balances[asset_name] = available_balance
+                    self._account_balances[asset_name] = total_balance
+
                 elif event_type == CONSTANTS.ORDER_STATUS_UPDATE_EVENT_TYPE:
                     data = event_message.get("data")
                     client_order_id = data["customerOrderId"]
@@ -205,7 +210,6 @@ class ValrExchange(ExchangePyBase):
             except Exception:
                 self.logger().error("Unexpected error in user stream listener loop.", exc_info=True)
                 await self._sleep(5.0)
-        pass
 
     async def _format_trading_rules(self, exchange_info_dict: List[Dict[str, Any]]) -> List[TradingRule]:
         # TODO: figure the correct relation between VALRs values and HB expected values
